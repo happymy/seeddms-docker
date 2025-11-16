@@ -1,6 +1,6 @@
-FROM php:7.4-apache
+FROM php:8.2-apache
 LABEL maintainer="Niels Lippke<nlippke@gmx.de>"
-ENV VER 6.0.23
+ENV VER 6.0.35
 ENV PAPERLESS_VER 1.1.0
 ENV SEEDDMS_BASE=/var/www/seeddms \
     SEEDDMS_HOME=/var/www/seeddms/seeddms
