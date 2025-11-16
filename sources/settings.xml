@@ -344,7 +344,9 @@
       <converter mimeType="text/xml">cat %s</converter>
       <converter mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">xlsx2csv %s</converter>
       <converter mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document">docx2txt %s -</converter>
-      <converter mimeType="image/jpeg">tesseract %s - -l deu --psm 3 --oem 3 2&gt; /dev/null | tr '\n' ' '</converter>
+      <converter mimeType="image/jpeg">tesseract %s - -l deu+eng --psm 3 --oem 3 2&gt; /dev/null | tr '\n' ' '</converter>
+      <converter mimeType="image/png">tesseract %s - -l deu+eng --psm 3 --oem 3 2&gt; /dev/null | tr '\n' ' '</converter>
+      <converter mimeType="image/tiff">tesseract %s - -l deu+eng --psm 3 --oem 3 2&gt; /dev/null | tr '\n' ' '</converter>
     </converters>
 
     <converters target="preview">
