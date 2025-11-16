@@ -24,8 +24,8 @@ RUN curl -fsSL https://downloads.sourceforge.net/project/seeddms/seeddms-${VER}/
 RUN mv /var/www/seeddms60x /var/www/seeddms && mkdir /var/www/seeddms/backup && mkdir -p /var/www/seeddms/import/admin && \
     mv /var/www/seeddms/conf /var/www/seeddms/data/conf && ln -s /var/www/seeddms/data/conf /var/www/seeddms/conf && \
     mkdir $SEEDDMS_HOME/ext && touch /var/www/seeddms/conf/ENABLE_INSTALL_TOOL && \
-    curl -fsSL -o /tmp/paperless.zip https://github.com/SeedDMS/paperless/releases/download/${PAPERLESS_VER}/paperless-${PAPERLESS_VER}.zip && \
-    unzip -d /var/www/seeddms/www/ext/paperless /tmp/paperless.zip && rm -f /tmp/paperless.zip  
+#    curl -fsSL -o /tmp/paperless.zip https://codeberg.org/SeedDMS/paperless/releases/download/${PAPERLESS_VER}/paperless-${PAPERLESS_VER}.zip && \
+#    unzip -d /var/www/seeddms/www/ext/paperless /tmp/paperless.zip && rm -f /tmp/paperless.zip
 
 # Copy settings-files
 COPY sources/php.ini /usr/local/etc/php/
