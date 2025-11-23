@@ -77,6 +77,26 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
+      - name: Export built image to tar
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --output type=tar,dest=/tmp/seeddms.tar \
+            --tag seeddms:${{ github.sha }} \
+            .
+
+      - name: Compress Docker image
+        run: |
+          gzip -c /tmp/seeddms.tar > /tmp/seeddms.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: seeddms-image
+          path: |
+            /tmp/seeddms.tar
+            /tmp/seeddms.tar.gz
+
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -115,97 +135,21 @@ jobs:
             exit 1
           fi
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "(no-op) ensure release step placeholder"
+        run: echo "release will be created/updated later"
+
+      - name: Download built image artifact
+        uses: actions/download-artifact@v3
         with:
-          tag_name: ${{ steps.vars.outputs.version }}
-          release_name: Release ${{ steps.vars.outputs.version }}
+          name: seeddms-image
+          path: /tmp
+
+      - name: Create or update GitHub Release and upload assets
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.vars.outputs.version }}
+          name: Release ${{ steps.vars.outputs.version }}
+          allowUpdates: true
+          artifacts: "/tmp/seeddms.tar,/tmp/seeddms.tar.gz"
           draft: false
           prerelease: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build Docker image for release assets
-        run: |
-          docker buildx build \
-            --output type=tar,dest=/tmp/seeddms.tar \
-            --tag ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.version }} \
-            --cache-from=type=local,src=/tmp/.buildx-cache .
-
-      - name: Compress Docker image
-        run: |
-          gzip -c /tmp/seeddms.tar > /tmp/seeddms.tar.gz
-
-      - name: Upload Docker image as release asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /tmp/seeddms.tar
-          asset_name: seeddms-${{ steps.vars.outputs.version }}.docker.tar
-          asset_content_type: application/x-tar
-          
-      - name: Upload compressed Docker image as release asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /tmp/seeddms.tar.gz
-          asset_name: seeddms-${{ steps.vars.outputs.version }}.docker.tar.gz
-          asset_content_type: application/gzip
-
-  notify:
-    needs: release
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Send email notification
-        if: ${{ secrets.EMAIL_USERNAME != '' && secrets.EMAIL_PASSWORD != '' && secrets.NOTIFY_EMAIL != '' }}
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "SeedDMS Docker Build - Job Status: ${{ job.status }}"
-          body: |
-            Hello,
-
-            The SeedDMS Docker build and release workflow has completed.
-
-            Repository: ${{ github.repository }}
-            Commit SHA: ${{ github.sha }}
-            Ref: ${{ github.ref }}
-            Workflow: ${{ github.workflow }}
-            Job Status: ${{ job.status }}
-
-            You can view the workflow run here: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Regards,
-            GitHub Actions
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: GitHub Actions
-
-      - name: Fallback: create issue as notification
-        if: ${{ secrets.EMAIL_USERNAME == '' || secrets.EMAIL_PASSWORD == '' || secrets.NOTIFY_EMAIL == '' }}
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const tag = process.env.RELEASE_TAG || 'unknown'
-            const title = `Build finished for ${tag} (workflow: ${process.env.GITHUB_WORKFLOW})`
-            const body = `The SeedDMS Docker build and release workflow has completed.\n\nRepository: ${process.env.GITHUB_REPOSITORY}\nCommit SHA: ${process.env.GITHUB_SHA}\nRef: ${process.env.GITHUB_REF}\nRun: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body
-            })
-        env:
-          RELEASE_TAG: ${{ needs.release.outputs.release_tag }}
