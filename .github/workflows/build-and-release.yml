@@ -1,155 +1,196 @@
+# 工作流名称：构建和发布Docker镜像
 name: Build and Release Docker Image
 
+# 设置工作流权限，允许写入内容和包
 permissions:
   contents: write
   packages: write
 
+# 定义触发工作流的事件
 on:
+  # 允许手动触发工作流
   workflow_dispatch:
     inputs:
+      # 发布版本号输入参数
       release_version:
-        description: 'Version to release (e.g., v1.0.0)'
+        description: '版本号 (例如: v1.0.0)'
         required: false
+      # 是否发布到注册表的选项
       publish_to_registry:
-        description: 'Publish to registry (true/false)'
+        description: '是否发布到注册表 (true/false)'
         required: false
         default: 'false'
+  # 当向指定分支推送时触发
   push:
     branches:
-      - main
-      - dev
+      - main  # 主分支
+      - dev   # 开发分支
     tags:
-      - 'v*'
+      - 'v*'  # 以v开头的标签
+  # 当向指定分支发起Pull Request时触发
   pull_request:
     branches:
-      - main
-      - dev
+      - main  # 主分支
+      - dev   # 开发分支
 
+# 定义工作流中的任务
 jobs:
+  # 构建任务
   build:
+    # 运行环境：Ubuntu最新版
     runs-on: ubuntu-latest
     steps:
+      # 步骤1：检出代码
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 步骤2：提取Docker元数据
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
+          # 定义镜像名称
           images: |
             ${{ github.repository }}
             ghcr.io/${{ github.repository }}
+          # 定义标签规则
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=ref,event=branch     # 分支名作为标签
+            type=ref,event=pr         # PR号作为标签
+            type=semver,pattern={{version}}   # 语义化版本号完整格式
+            type=semver,pattern={{major}}.{{minor}}  # 主版本.次版本格式
+            type=sha                  # 提交SHA作为标签
 
+      # 步骤3：设置QEMU仿真器，用于多架构构建
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+      # 步骤4：设置Docker Buildx，支持多平台构建
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # 步骤5：缓存Docker层，加速构建过程
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
+          path: /tmp/.buildx-cache          # 缓存路径
+          key: ${{ runner.os }}-buildx-${{ github.sha }}  # 缓存键
+          restore-keys: |                   # 恢复键
             ${{ runner.os }}-buildx-
 
+      # 步骤6：构建Docker镜像
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new
+          context: .                        # 构建上下文
+          platforms: linux/amd64,linux/arm64  # 构建平台
+          push: false                       # 不推送镜像
+          tags: ${{ steps.meta.outputs.tags }}   # 使用前面定义的标签
+          labels: ${{ steps.meta.outputs.labels }} # 使用前面定义的标签
+          cache-from: type=local,src=/tmp/.buildx-cache     # 使用缓存
+          cache-to: type=local,dest=/tmp/.buildx-cache-new  # 保存缓存
 
+      # 步骤7：移动缓存以解决权限问题
       # 临时修复缓存权限问题
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
+      # 步骤8：将构建好的镜像导出为tar文件
       - name: Export built image to tar
         run: |
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --output type=tar,dest=/tmp/seeddms.tar \
-            --tag seeddms:${{ github.sha }} \
+            --platform linux/amd64,linux/arm64 \     # 指定平台
+            --output type=tar,dest=/tmp/seeddms.tar \ # 导出为tar文件
+            --tag seeddms:${{ github.sha }} \        # 设置镜像标签
             .
 
+      # 步骤9：压缩Docker镜像为gzip格式
       - name: Compress Docker image
         run: |
           gzip -c /tmp/seeddms.tar > /tmp/seeddms.tar.gz
 
+      # 步骤10：上传镜像构件供后续任务使用
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: seeddms-image
-          path: |
+          name: seeddms-image           # 构件名称
+          path: |                       # 构件路径
             /tmp/seeddms.tar
             /tmp/seeddms.tar.gz
 
+  # 发布任务
   release:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: build                      # 依赖build任务完成
+    runs-on: ubuntu-latest            # 运行环境
     outputs:
-      release_tag: ${{ steps.vars.outputs.version }}
+      release_tag: ${{ steps.vars.outputs.version }}  # 输出版本标签
+    # 条件判断：当推送以v开头的标签或手动触发且提供了版本号时执行
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
     steps:
+      # 步骤1：检出代码
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 步骤2：设置Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # 步骤3：缓存Docker层
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-release-${{ github.sha }}
-          restore-keys: |
+          path: /tmp/.buildx-cache                      # 缓存路径
+          key: ${{ runner.os }}-buildx-release-${{ github.sha }}  # 缓存键
+          restore-keys: |                               # 恢复键
             ${{ runner.os }}-buildx-release-
 
+      # 步骤4：设置发布版本号
       - name: Set release version
         id: vars
         run: |
+          # 如果是手动触发，使用输入的版本号，否则使用git标签名
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
           else
             echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
+      # 步骤5：验证版本号格式（仅在手动触发时）
       - name: Validate version format
         if: github.event_name == 'workflow_dispatch'
         run: |
+          # 使用正则表达式验证版本号格式是否符合语义化版本规范
           if [[ ! "${{ steps.vars.outputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "Invalid version format. Please use format: v1.2.3 or v1.2.3-beta1"
+            echo "版本号格式不正确，请使用如下格式: v1.2.3 或 v1.2.3-beta1"
             exit 1
           fi
 
+      # 步骤6：占位步骤，确保发布步骤存在
       - name: "(no-op) ensure release step placeholder"
         run: echo "release will be created/updated later"
 
+      # 步骤7：下载之前构建的镜像构件
       - name: Download built image artifact
         uses: actions/download-artifact@v4
         with:
-          name: seeddms-image
-          path: /tmp
+          name: seeddms-image       # 要下载的构件名称
+          path: /tmp                # 下载到/tmp目录
 
+      - name: Move artifacts into workspace
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          mv /tmp/seeddms.tar* "$GITHUB_WORKSPACE/release-assets/" || true
+          ls -la "$GITHUB_WORKSPACE/release-assets"
+
+      # 步骤8：创建或更新GitHub Release并上传构件
       - name: Create or update GitHub Release and upload assets
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ steps.vars.outputs.version }}
-          name: Release ${{ steps.vars.outputs.version }}
-          allowUpdates: true
-          artifacts: "/tmp/seeddms.tar,/tmp/seeddms.tar.gz"
-          draft: false
-          prerelease: false
+          tag: ${{ steps.vars.outputs.version }}              # 标签
+          name: Release ${{ steps.vars.outputs.version }}     # 发布名称
+          allowUpdates: true                                  # 允许更新现有Release
+          artifacts: "release-assets/seeddms.tar,release-assets/seeddms.tar.gz"   # 上传的构件
+          draft: false                                        # 非草稿
+          prerelease: false                                   # 非预发布
