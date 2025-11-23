@@ -90,7 +90,7 @@ jobs:
           gzip -c /tmp/seeddms.tar > /tmp/seeddms.tar.gz
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: seeddms-image
           path: |
@@ -139,7 +139,7 @@ jobs:
         run: echo "release will be created/updated later"
 
       - name: Download built image artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: seeddms-image
           path: /tmp
